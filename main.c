@@ -1,8 +1,9 @@
 #include <stdio.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define maxbuffer 100
+#define maxbuffer 1000
 
 //###NOTA: Todo fue realizado en replit, asi es como fuimos trabajando de forma síncrona. Al pasar aca algunas funciones
 //ejecutan bien pero casi de forma aleatoria (usando mismo input).
@@ -24,6 +25,7 @@ struct Producto {
     char *nombreProducto;
     char *marca;
     int stockProducto;
+    int valorUnitario;
 };
 
 struct NodoCompraProveedor { // lista simplemente enlazada
@@ -39,18 +41,25 @@ struct CompraProveedor {
     int codigoCompra;
 };
 
-struct NodoVenta {
+struct NodoVenta {// Lista circular doblemente enlazada
     struct Venta *detallesVenta;
     struct NodoVenta *ant, *sig;
 };
 
-struct Venta { // Lista circular doblemente enlazada
+struct Venta { 
     char *fecha;
     char *rutCliente;
-    int codigoProducto;
-    int cantidadVendida;
     int montoTotal;
     int codigoVenta;
+    struct unidadVenta **vectorProductos;
+    int plibre;
+};
+
+//unidad venta sera para el arreglo de referencias a los productos vendidos
+
+struct unidadVenta{
+  int codigoProducto;
+  int cantidadVendida;
 };
 
 struct Producto *buscarProducto(struct NodoProducto *raiz, int codigoBuscado) {
@@ -78,28 +87,33 @@ struct Producto *crearProducto() {
     // en este caso, se le agregan los nuevos productos que van trayendo los
     // proveedores y no estaban en MB.
     struct Producto *nuevoProducto = (struct Producto *)malloc(sizeof(struct Producto));
-    char *nombreProducto = (char *)malloc((maxbuffer));
-    char *marca = (char *)malloc((maxbuffer));
+    char nombreProducto[maxbuffer];
+    char marca[maxbuffer];
     int codigoProducto;
-    int stockProducto = 0;
+    int stockProducto;
+    int valorProducto;
     if (nuevoProducto!=NULL) {
         printf("Ingrese el codigo del producto: \n");
         scanf("%d", &codigoProducto);
         printf("Ingrese el nombre del producto: \n");
-        scanf("%s", nombreProducto);
-        printf("Ingrese la marca del producto\n");
-        scanf("%s", marca);
+        scanf(" %[^\n]s", nombreProducto); getchar();
+        printf("Ingrese la marca del producto: \n");
+        scanf(" %[^\n]s", marca); getchar();
         printf("Ingrese el stock del producto: ");
-        while (stockProducto <= 0){
-            scanf("%d", &stockProducto);
-            if (stockProducto <= 0) {
-                printf("\nIngrese un stock válido: ");
-            }
-        }
+        scanf("%d", &stockProducto);
+        printf("Ingrese el valor del producto");
+        scanf("&d", &valorProducto);
+
         nuevoProducto->codigo = codigoProducto;
-        nuevoProducto->nombreProducto = nombreProducto;
-        nuevoProducto->marca = marca;
+
+        nuevoProducto->nombreProducto = (char *) malloc(sizeof(char) * (strlen(nombreProducto) + 1));
+        strcpy(nuevoProducto->nombreProducto, nombreProducto);
+
+        nuevoProducto->marca = (char *) malloc(sizeof(char) * (strlen(marca) + 1));
+        strcpy(nuevoProducto->marca, marca);
+
         nuevoProducto->stockProducto = stockProducto;
+        nuevoProducto->valorUnitario = valorProducto;
 
         return nuevoProducto;
     }
@@ -196,8 +210,7 @@ struct CompraProveedor *crearCompraProveedor(int codigoProducto, int cantidadCom
     return nuevaCompra;
 }
 
-struct NodoCompraProveedor *agregarCompraProveedor(struct NodoCompraProveedor *head,
-                                                   struct CompraProveedor *nuevaCompra) {
+struct NodoCompraProveedor *agregarCompraProveedor(struct NodoCompraProveedor *head, struct CompraProveedor *nuevaCompra) {
     struct NodoCompraProveedor *nuevoNodo =
             (struct NodoCompraProveedor *)malloc(sizeof(struct NodoCompraProveedor));
     nuevoNodo->datosComprasP = nuevaCompra;
@@ -227,15 +240,15 @@ void registrarCompra(struct MercaditoLibre *mercado, int codigoProducto, int can
     mercado->headProveedor = agregarCompraProveedor(mercado->headProveedor, nuevaCompra);
 }
 
-struct Venta *crearVenta(int codigoProducto, int cantidadVendida, char *rutCliente, char *fechaVenta, int codigo, int monto){
+struct Venta *crearVenta(char *rutCliente, char *fechaVenta, int *codigo, int monto, struct unidadVenta **arreglo, int plibre){
     struct Venta *nuevaVenta = (struct Venta *)malloc(sizeof(struct Venta));
     if(nuevaVenta){
-        nuevaVenta->codigoProducto = codigoProducto;
-        nuevaVenta->cantidadVendida = cantidadVendida;
         nuevaVenta->montoTotal = monto;
         if(rutCliente) nuevaVenta->rutCliente = strdup(rutCliente);
         if(fechaVenta) nuevaVenta->fecha = strdup(fechaVenta);
-        nuevaVenta->codigoVenta = codigo;
+        nuevaVenta->codigoVenta = (*codigo);
+        nuevaVenta->vectorProductos = arreglo;
+        nuevaVenta->plibre = plibre;
     }
     return nuevaVenta;
 }
@@ -261,48 +274,35 @@ struct NodoVenta *agregarVenta(struct NodoVenta **head, struct Venta *nuevaVenta
     return (*head);
 }
 
-void enviarAlertaPorAgotarse(struct NodoProducto *raiz, int minStock) {
-
-    // utilizazmos una funcion recursiva.
-    if (raiz == NULL)
-        return;
-    if (raiz->datosProductos->stockProducto <= minStock)
-        printf("ALERTA: El producto %s (codigo %d) está por agotarse, cantidad stock actual: %d\n",raiz->datosProductos->nombreProducto, raiz->datosProductos->codigo, raiz->datosProductos->stockProducto);
-    enviarAlertaPorAgotarse(raiz->izquierda, minStock);
-    enviarAlertaPorAgotarse(raiz->derecha, minStock);
-}
-
-void registrarVenta(struct MercaditoLibre *mercado, int codigoProducto, int cantVendida, char *rutCliente, char *fechaVenta, int *codigoVentaActual, int monto) {
-    struct Producto *productoEncontrado = buscarProducto(mercado->raizProducto, codigoProducto);
-    if (productoEncontrado) {
-        if (productoEncontrado->stockProducto >= cantVendida) {
-            productoEncontrado->stockProducto -= cantVendida;
-
-            enviarAlertaPorAgotarse(mercado->raizProducto, 10);
-
-            struct Venta *nuevaVenta = crearVenta(codigoProducto, cantVendida, rutCliente, fechaVenta,(*codigoVentaActual),monto);
-            nuevaVenta->codigoVenta = (*codigoVentaActual)++;
-            mercado->headVentas = agregarVenta(&(mercado->headVentas), nuevaVenta);
-        } else
-            printf("No hay suficiente stock para la venta.\n");
-    } else
-        printf("No contamos con el producto en inventario.\n");
-}
-
-//*Se busca venta por codigo y fecha, se modifica la cantidad de venta
+//*Se busca venta por codigo (se modifica un indice especifico del arreglo de productos de la venta) y fecha, se modifica la cantidad de venta
 // encontrada. Finalmente se retorna el nodo de la venta
 
-struct NodoVenta *modificarVenta(struct MercaditoLibre *mercado, int codigoProducto, char *fechaVenta, int cantVendida) {
+struct NodoVenta *modificarVenta(struct MercaditoLibre *mercado, int codigoVenta) {
     if (mercado != NULL && mercado->headVentas != NULL) {
         struct NodoVenta *rec = mercado->headVentas;
+        int nuevaCantidad,i,codigoProducto, antiguaCantidad;
         do {
-            if (rec->detallesVenta->codigoProducto == codigoProducto &&
-                (strcmp(rec->detallesVenta->fecha, fechaVenta) == 0)) {
-                rec->detallesVenta->cantidadVendida = cantVendida;
-                return rec;
+            if (rec->detallesVenta->codigoVenta == codigoVenta) {
+                printf("Ingrese el codigo del producto a modificar: \n");
+                scanf("%d", &codigoProducto);
+                for(i=0;i<rec->detallesVenta->plibre;i++){
+                  if(rec->detallesVenta->vectorProductos[i]->codigoProducto==codigoProducto){
+                    do{
+                    printf("Ingrese la nueva cantidad: \n");
+                    scanf("%d", &nuevaCantidad);
+                    }while(nuevaCantidad<=0 || nuevaCantidad>=rec->detallesVenta->vectorProductos[i]->cantidadVendida);
+                    antiguaCantidad = rec->detallesVenta->vectorProductos[i]->cantidadVendida;
+                    rec->detallesVenta->vectorProductos[i]->cantidadVendida = nuevaCantidad;
+                    
+                    //Se suma o resta el stock correspondiente y retorna la venta modificada
+                    buscarProducto(mercado->raizProducto, codigoProducto)->stockProducto += antiguaCantidad - nuevaCantidad;
+                    return rec;
+                }
+                }
             }
             rec = rec->sig;
-        } while (rec != mercado->headVentas);
+        }while(rec != mercado->headVentas);
+        printf("Venta no encontrada.\n");
     }
     return NULL;
 }
@@ -326,30 +326,50 @@ struct NodoVenta *buscarVentaFecha(struct NodoVenta *head, char *fechaBuscada)
 }
 
 
-void contarVentas(struct NodoVenta *head, int *cantVentas) {
-    if (head == NULL)
-        return;
-
-    struct NodoVenta *rec = head;
-    do {
-        (*cantVentas)++;
-        rec = rec->sig;
-
-    } while (rec != head);
+struct unidadVenta *crearUnidadVenta(int codigoProducto ,int cantVendida){
+  struct unidadVenta *nuevaUnidad = (struct unidadVenta *)malloc(sizeof(struct unidadVenta));
+  if(nuevaUnidad){
+    nuevaUnidad->codigoProducto = codigoProducto;
+    nuevaUnidad->cantidadVendida = cantVendida;
+  }
+  return nuevaUnidad;
 }
 
-int getRotacionProducto(int codigoProducto, struct NodoVenta *headVentas) {
-    struct NodoVenta *rec = headVentas;
-    int ventasTotales = 0;
-    if (headVentas != NULL) {
-        do {
-            if (rec->detallesVenta->codigoProducto == codigoProducto) {
-                ventasTotales += rec->detallesVenta->cantidadVendida;
-            }
-            rec = rec->sig;
-        } while (rec != headVentas);
+int calcularVentasProducto(struct NodoVenta *headVenta, int codigoProducto){
+  if(headVenta == NULL) return 0;
+  struct NodoVenta *rec = headVenta;
+  int i, cantTotal = 0;
+  do{
+    for(i = 0; i<rec->detallesVenta->plibre; i++){
+      if(rec->detallesVenta->vectorProductos[i]->codigoProducto == codigoProducto) 
+        cantTotal+=rec->detallesVenta->vectorProductos[i]->cantidadVendida;
     }
-    return ventasTotales;
+    rec = rec->sig;
+  }while(rec != headVenta);
+  return cantTotal;
+}
+
+int getRotacionProducto(struct MercaditoLibre *mercadito) {
+  if(mercadito!= NULL && mercadito->headVentas != NULL){
+    struct NodoVenta *rec = mercadito->headVentas;
+    int productoMasVendido = rec->detallesVenta->vectorProductos[0]->codigoProducto;
+    int cantMasVendida = -1;
+    int i;
+    
+    do{
+      for(i=0; i< rec->detallesVenta->plibre; i++){
+        int cantidadVendida = calcularVentasProducto(mercadito->headVentas, rec->detallesVenta->vectorProductos[i]->codigoProducto);
+        if(cantidadVendida > cantMasVendida){
+          cantMasVendida = cantidadVendida;
+          productoMasVendido = rec->detallesVenta->vectorProductos[i]->codigoProducto;
+        }
+      }
+      rec = rec->sig;
+    }while(rec != mercadito->headVentas);
+    return productoMasVendido;
+        
+  }
+  return -1;
 }
 
 // Esta funcion lista todos los productos "in-order".
@@ -361,8 +381,15 @@ void listarProductos(struct NodoProducto *raiz, struct NodoVenta *headVentas) {
         listarProductos(raiz->izquierda, headVentas);
         // Imprime el producto del nodo actual
         printf("Imprimiendo nodo actual...\n");
-        printf("Codigo: %d,Stock : %d, Nombre: %s, Rotacion: %d\n", raiz->datosProductos->codigo, raiz->datosProductos->stockProducto,
-               raiz->datosProductos->nombreProducto, getRotacionProducto(raiz->datosProductos->codigo, headVentas));
+        printf("Codigo: %d,Stock : %d, Nombre: %s, Rotacion: \n", raiz->datosProductos->codigo, raiz->datosProductos->stockProducto, raiz->datosProductos->nombreProducto);
+          /*
+          OJITO ACA ABAJOOOO
+          OJITO ACA ABAJOOOO
+          OJITO ACA ABAJOOOO
+          OJITO ACA ABAJOOOO
+          OJITO ACA ABAJOOOO
+          */
+              //raiz->datosProductos->nombreProducto, getRotacionProducto(raiz->datosProductos->codigo, headVentas));
         // Recorre el subárbol derecho
         listarProductos(raiz->derecha, headVentas);
     }
@@ -375,11 +402,18 @@ void listarProductos(struct NodoProducto *raiz, struct NodoVenta *headVentas) {
 void mostrarVentas(struct NodoVenta *head) {
     if (head != NULL) {
         struct NodoVenta *rec = head;
+        int i;
         printf("Lista de ventas: \n");
         do {
-            printf("Codigo producto: %d ,", rec->detallesVenta->codigoProducto);
-            printf("Rut cliente: %s, ", rec->detallesVenta->rutCliente);
-            printf("Fecha venta: %s\n", rec->detallesVenta->fecha);
+            printf("\n- Rut cliente: %s, ", rec->detallesVenta->rutCliente);
+            printf("Fecha venta: %s, ", rec->detallesVenta->fecha);
+            printf("Codigo venta: %d. \n Productos: \n", rec->detallesVenta->codigoVenta);
+            for(i=0;i<rec->detallesVenta->plibre;i++){
+            printf("%d - Codigo producto: %d ,",i+1,  rec->detallesVenta->vectorProductos[i]->codigoProducto);
+              //PROBLEMA AQUI
+              //SE DEBE CREAR STRUCT O OTRO ARREGLO PARA MANEJAR CANTIDAD DE PRODUCTO VENDIDA
+            printf("Cantidad vendida: %d.", rec->detallesVenta->vectorProductos[i]->cantidadVendida);
+             }
             rec = rec->sig;
         } while (rec != head);
     } else
@@ -433,18 +467,21 @@ void mejorCliente(struct NodoVenta *head){
 // encontrar el nodo de la venta a //eliminar Si la venta es eliminada con exito
 // se retorna 1, si no 0.
 
-int eliminarVenta(struct NodoVenta **head, int codigoProducto,
+int eliminarVenta(struct NodoVenta **head, int codigoVenta,
                   struct NodoProducto *raizProductos) {
+    int i = 0;
     if (*head != NULL) {
         struct NodoVenta *rec = (*head);
         do {
-            if (rec->detallesVenta->codigoProducto == codigoProducto) {
+            if (rec->detallesVenta->codigoVenta == codigoVenta) {
                 // Caso en el que es el primer nodo y el unico
                 if (rec == (*head)) {
                     if (rec == (*head)->sig) {
-                        if (buscarProducto(raizProductos, codigoProducto)) {
-                            buscarProducto(raizProductos, codigoProducto)->stockProducto +=
-                                    rec->detallesVenta->cantidadVendida;
+                        //Actualizar stock de los productos
+                        for(i=0; i<rec->detallesVenta->plibre; i++){
+                        if (buscarProducto(raizProductos, rec->detallesVenta->vectorProductos[i]->codigoProducto)) {
+                            buscarProducto(raizProductos, rec->detallesVenta->vectorProductos[i]->codigoProducto)->stockProducto += rec->detallesVenta->vectorProductos[i]->cantidadVendida;
+                        }
                         }
                         (*head) = NULL;
                         return 1;
@@ -453,10 +490,14 @@ int eliminarVenta(struct NodoVenta **head, int codigoProducto,
                 }
                 // Se valida si es que el producto de la venta eliminada es valido, si
                 // lo es, suma la cantidad de la venta
-                if (buscarProducto(raizProductos, codigoProducto)) {
-                    buscarProducto(raizProductos, codigoProducto)->stockProducto +=
-                            rec->detallesVenta->cantidadVendida;
+                //Actualizar stock de los productos
+              for(i=0; i<rec->detallesVenta->plibre; i++){
+                if (buscarProducto(raizProductos, rec->detallesVenta->vectorProductos[i]->codigoProducto)) {
+                    buscarProducto(raizProductos, rec->detallesVenta->vectorProductos[i]->codigoProducto)->stockProducto +=
+                            rec->detallesVenta->vectorProductos[i]->cantidadVendida;
                 }
+                }
+                //Eliminarla de la lista
                 rec->ant->sig = rec->sig;
                 rec->sig->ant = rec->ant;
                 rec = NULL;
@@ -613,7 +654,8 @@ void menuSwitchProductos(struct MercaditoLibre *mercado) {
         printf("3. Buscar producto\n");
         printf("4. Modificar producto\n");
         printf("5. Listar productos\n");
-        printf("6. Volver\n");
+        printf("6. Producto con mayor rotación\n");
+        printf("7. Volver\n");
         printf("Ingrese el número de opcion: ");
         scanf("%d", &opcion);
         // fflush(stdout);
@@ -652,8 +694,10 @@ void menuSwitchProductos(struct MercaditoLibre *mercado) {
                 printf("Lista de productos: \n");
                 listarProductos(mercado->raizProducto, mercado->headVentas);
                 break;
-
-            case 6: // Volver
+            case 6:
+                printf("El código del producto con mayor rotación %d\n",getRotacionProducto(mercado->raizProducto));
+                break;
+            case 7: // Volver
                 printf("Saliendo del menu, hasta luego.\n");
                 break;
             default:
@@ -661,7 +705,171 @@ void menuSwitchProductos(struct MercaditoLibre *mercado) {
                        "anteriormente mencionadas.\n");
         }
 
-    } while (opcion != 6);
+    } while (opcion != 7);
+}
+
+
+struct Venta *buscarVenta(struct NodoVenta *head, int codigoVenta){
+
+    struct NodoVenta *rec = head;
+
+    do{
+        if(rec->detallesVenta->codigoVenta == codigoVenta) return rec->detallesVenta;
+        rec = rec->sig;
+    }while(rec != head);
+
+    return NULL;
+}
+
+struct unidadVenta *buscarProductoEnArreglo(struct unidadVenta **vector, int pLibre, int codigoProducto){
+
+    int i = 0, enc = 0;
+
+    while((!enc) && (i < pLibre)){
+
+        if(vector[i]->codigoProducto == codigoProducto) enc = 1;
+        else i++;
+    }
+
+    if(enc == 1) return vector[i];
+    return NULL;
+
+
+}
+
+void opcionBusqueda(struct MercaditoLibre *ML){
+
+    int idVenta, codigoProducto;
+
+    printf("Ingresa el codigo de la venta :");
+    scanf("%d", &idVenta);
+
+    struct Venta *venta = buscarVenta(ML->headVentas, idVenta);
+
+    if(venta){
+
+        printf("Ingrese el codigo del producto :");
+        scanf("%d", &codigoProducto);
+
+        struct unidadVenta *idProducto = buscarProductoEnArreglo(venta->vectorProductos, venta->plibre, codigoProducto);
+
+        if(idProducto){
+
+            struct Producto *producto = buscarProducto(ML->raizProducto, idProducto->codigoProducto);
+            printf("Id Producto: %d | Nombre: %s | Unidades Compradas: %d", producto->codigo, producto->nombreProducto, idProducto->cantidadVendida);
+        }
+        else{
+            printf("El producto no ha sido encontrado \n");
+            return;
+        }
+    }
+    else{
+        printf("No se ha encontrado la venta \n");
+    }
+}
+
+void mostrarProductos(struct unidadVenta **arreglo, struct NodoProducto *raiz, int pLibre){
+    int i;
+
+    for(i = 0; i < pLibre; i++){
+
+        struct Producto *producto = buscarProducto(raiz, arreglo[i]->codigoProducto);
+        printf("Id Producto: %d | Nombre: %s | Unidades Compradas: %d \n", producto->codigo, producto->nombreProducto, arreglo[i]->cantidadVendida);
+    }
+}
+
+void ordenarProductos(struct unidadVenta **arreglo, int pLibre){
+
+    int i, k;
+    struct unidadVenta *aux = NULL;
+
+    for(i = 0; i < pLibre-1; i++){
+
+        for(k = 0; k < pLibre-1; k++){
+
+            if(arreglo[k]->codigoProducto > arreglo[k+1]->codigoProducto){
+
+                aux = arreglo[k];
+                arreglo[k]= arreglo[k+1];
+                arreglo[k+1] = aux;
+            }
+        }
+    }
+}
+
+void opcionMostrar(struct MercaditoLibre *ML){
+
+    int codigoVenta;
+
+    printf("ingresa el codigo de venta :");
+    scanf("%d", &codigoVenta);
+
+    struct Venta *venta = buscarVenta(ML->headVentas, codigoVenta);
+
+    if(venta){
+
+        ordenarProductos(venta->vectorProductos, venta->plibre);
+        mostrarProductos(venta->vectorProductos, ML->raizProducto, venta->plibre);
+    }
+    else{
+        printf("No se ha encontrado la venta \n");
+    }
+}
+
+
+void gestionarVenta(struct MercaditoLibre *mercado, int *codigoVentaActual){
+
+    int codigoProducto, cantVendida = 0, montoVenta, cantProductos, indice = 0;
+    char *rutCliente = (char *)malloc(sizeof(char) * 12);
+    char *fechaVenta = (char *)malloc(sizeof(char) * 10);
+
+    printf("Ingrese la cantidad de productos a comprar : ");
+    scanf("%d", &cantProductos);
+
+    printf("Ingrese el rut del cliente: \n");
+    scanf("%11s", rutCliente);
+
+    printf("Ingrese la fecha de la venta:\n");
+    scanf("%s", fechaVenta);
+
+    printf("Ingrese el monto de la venta:\n");
+    scanf("%d", &montoVenta);
+
+    struct unidadVenta **arreglo = (struct unidadVenta **) malloc(sizeof(struct unidadVenta *) * cantProductos);
+    while(true) {
+        printf("Ingrese el codigo del producto: ");
+        scanf("%d", &codigoProducto);
+        printf("\nIngrese la cantidad a comprar: ");
+        scanf("%d", &cantVendida);
+        struct Producto *productoEncontrado = buscarProducto(mercado->raizProducto, codigoProducto);
+        if(productoEncontrado) {
+            if (productoEncontrado->stockProducto >= cantVendida) {
+                productoEncontrado->stockProducto -= cantVendida;
+                //SE CREA LA UNIDAD DE VENTA
+                struct unidadVenta *unidadVenta = crearUnidadVenta(codigoProducto, cantVendida);
+                if(productoEncontrado->stockProducto <= 10)
+                    printf("ALERTA: Queda poco stock del producto. Unidades restantes : %d\n", productoEncontrado->stockProducto);
+
+                //SE AGREGA LA UNIDAD DE VENTA CREADA AL ARREGLO
+                arreglo[indice] = unidadVenta;
+                indice++;
+                if(indice == cantProductos) break;
+            }
+            else{
+              printf("No hay suficiente stock para la venta.\n");
+              cantProductos--;
+            }
+        }
+        else {
+            printf("No contamos con el producto en inventario.\n");
+            //return;
+            cantProductos--;
+        }
+    }
+    struct Venta *nuevaVenta = crearVenta(rutCliente, fechaVenta,codigoVentaActual,montoVenta, arreglo, cantProductos);
+    nuevaVenta->codigoVenta = (*codigoVentaActual)++;
+    agregarVenta(&(mercado->headVentas), nuevaVenta);
+    printf("Gracias por su compra\n");
 }
 
 void menuSwitchVentas(struct MercaditoLibre *mercado, int *codigoVentaActual) {
@@ -671,90 +879,84 @@ void menuSwitchVentas(struct MercaditoLibre *mercado, int *codigoVentaActual) {
     int stockProducto;
     int cantVendida = 0;
     int montoVenta;
+    int codigoVenta;
     char *rutCliente = (char *)malloc(sizeof(char) * 12);
     char *fechaVenta = (char *)malloc(sizeof(char) * 10);
-    do {
-        printf("\n** Lista de opciones de menu ventas a clientes**\n");
-        printf("1. Agregar venta\n");
-        printf("2. Eliminar venta\n");
-        printf("3. Buscar  venta\n");
-        printf("4. Modificar venta\n");
-        printf("5. Listar ventas\n");
-        printf("6. Mejor cliente \n");
-        printf("7. Volver\n");
-        printf("Ingrese el numero de opcion: ");
-        scanf("%d", &opcion);
-        switch (opcion) {
-            case 1: // Agregar
-                printf("Ingrese el codigo del producto: ");
-                scanf("%d", &codigoProducto);
-                printf("\nIngrese la cantidad vendida: ");
-                scanf("%d", &cantVendida);
-                printf("Ingrese el rut del cliente: \n");
-                scanf("%11s", rutCliente);
-                printf("Ingrese la fecha de la venta:\n");
-                scanf("%s", fechaVenta);
-                printf("Ingrese el monto de la venta:\n");
-                scanf("%d", &montoVenta);
-                registrarVenta(mercado, codigoProducto, cantVendida, rutCliente,fechaVenta, &codigoVentaActual, montoVenta);
-                break;
-            case 2: // Eliminar
-                printf("Ingrese el codigo del producto a eliminar de las ventas: ");
-                scanf("%d", &codigoProducto);
-                if (eliminarVenta(&(mercado->headVentas), codigoProducto,
-                                  mercado->raizProducto) == 1) {
-                    printf("\nProducto eliminado de las ventas.\n");
-                } else {
-                    printf("\nProducto no encontrado.\n");
-                }
-                break;
+      do {
+          printf("\n** Lista de opciones de menu ventas a clientes**\n");
+          printf("1. Agregar venta\n");
+          printf("2. Eliminar venta\n");
+          printf("3. Buscar  venta\n");
+          printf("4. Modificar venta\n");
+          printf("5. Listar ventas\n");
+          printf("6. Mejor cliente \n");
+          printf("7. Buscar producto en venta \n");
+          printf("8. Mostrar productos de una venta ordenados \n");
+          printf("9. Volver\n");
+          printf("Ingrese el numero de opcion: ");
+          scanf("%d", &opcion);
+          switch (opcion) {
+              case 1: // Agregar
 
-            case 3: // Buscar
-                printf("Ingrese codigo de producto de producto de la venta buscada: ");
-                scanf("%d", &codigoProducto);
-                printf("\nIngrese fecha de la venta buscada: ");
-                scanf("%s", fechaVenta);
-                if(buscarProducto(mercado->raizProducto, codigoProducto)) {
-                    if (buscarVentaFecha(mercado->headVentas, fechaVenta)) {
-                        printf("\nVenta encontrada.\n");
-                    }
-                    else
-                        printf("\nNo se encuentra una venta en la fecha.\n");
-                }
-                else
-                    printf("\nProducto no encontrado\n");
-                break;
+                  gestionarVenta(mercado, codigoVentaActual);
+                  break;
+              case 2: // Eliminar
+                  printf("Ingrese el codigo del producto a eliminar de las ventas: ");
+                  scanf("%d", &codigoProducto);
+                  if (eliminarVenta(&(mercado->headVentas), codigoProducto,
+                                    mercado->raizProducto) == 1) {
+                      printf("\nVenta eliminada de la lista de ventas.\n");
+                  } else {
+                      printf("\nCodigo de venta no encontrado.\n");
+                  }
+                  break;
 
-            case 4: // Modificar
-                printf(
-                        "Ingrese codigo de producto de producto de la venta a modificar: ");
-                scanf("%d", &codigoProducto);
-                printf("\nIngrese fecha de la venta a modificar: ");
-                scanf("%10s", fechaVenta);
-                printf("\nIngrese la nueva cantidad vendidad: ");
-                if (modificarVenta(mercado, codigoProducto, fechaVenta, cantVendida)) {
-                    printf("\nVenta modificada. \n");
-                } else {
-                    printf("\nVenta no encontrada. \n");
-                }
-                break;
-            case 5: // Listar
-                mostrarVentas(mercado->headVentas);
-                break;
+              case 3: // Buscar
+                  printf("Ingrese codigo de producto de producto de la venta buscada: ");
+                  scanf("%d", &codigoProducto);
+                  printf("\nIngrese fecha de la venta buscada: ");
+                  scanf("%s", fechaVenta);
+                  if(buscarProducto(mercado->raizProducto, codigoProducto)) {
+                      if (buscarVentaFecha(mercado->headVentas, fechaVenta)) {
+                          printf("\nVenta encontrada.\n");
+                      }
+                      else
+                          printf("\nNo se encuentra una venta en la fecha.\n");
+                  }
+                  else
+                      printf("\nProducto no encontrado\n");
+                  break;
 
-            case 6: //Mejor cliente
-                mejorCliente(mercado ->headVentas);
-                break;
-            case 7: // Volver
-                printf("Saliendo del menu, hasta luego.\n");
-                break;
-            default:
-                printf("Opcion no válida, por favor ingrese una de las opciones "
-                       "anteriormente mencionadas.\n");
-        }
-    }
-    while (opcion != 7);
-}
+              case 4: // Modificar
+                  printf("Ingrese codigo de venta a modificar: ");
+                  scanf("%d", &codigoVenta);
+                  modificarVenta(mercado, codigoVenta);
+                  break;
+              case 5: // Listar
+                  mostrarVentas(mercado->headVentas);
+                  break;
+
+              case 6: //Mejor cliente
+                  mejorCliente(mercado ->headVentas);
+                  break;
+
+              case 7: //Buscar producto en venta
+                  opcionBusqueda(mercado);
+                  break;
+
+              case 8: //Mostrar productos de una venta ordenados
+                  opcionMostrar(mercado);
+
+              case 9: // Volver
+                  printf("Saliendo del menu, hasta luego.\n");
+                  break;
+              default:
+                  printf("Opcion no válida, por favor ingrese una de las opciones "
+                         "anteriormente mencionadas.\n");
+          }
+      }
+      while (opcion != 9);
+  }
 
 void menuSwitchCompras(struct MercaditoLibre * mercado, int *codigoCompraActual) {
     int opcion;
@@ -786,7 +988,7 @@ void menuSwitchCompras(struct MercaditoLibre * mercado, int *codigoCompraActual)
                 scanf("%10s", fechaCompra);
                 printf("Ingrese el nombre del proveedor: \n");
                 scanf("%s", nombreProveedor);
-                registrarCompra(mercado, codigoProducto, cantidadComprada, fechaCompra, &codigoCompraActual, nombreProveedor);
+                registrarCompra(mercado, codigoProducto, cantidadComprada, fechaCompra, codigoCompraActual, nombreProveedor);
                 break;
             case 2: // Eliminar compra
                 printf("Ingrese el codigo de la compra que desea eliminar: \n");
